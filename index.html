@@ -1,0 +1,555 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Minecraft Farm Chase 3D</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:Arial,sans-serif;background:#8bd8ff;touch-action:none}
+canvas{display:block}
+#ui{position:fixed;inset:0;pointer-events:none;color:white;text-shadow:2px 2px 3px #222}
+.panel{background:#222b;border:2px solid #ffffff80;border-radius:12px;padding:9px}
+#top{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:6px}
+#animals{display:flex;flex-wrap:wrap;gap:5px;max-width:65%;pointer-events:auto}
+button{font-weight:bold;border:2px solid #fff;border-radius:9px;padding:9px 10px;background:#754e2b;color:white;font-size:14px}
+button:active{transform:scale(.94)}
+button.selected{background:#e7a927;color:#222;border-color:#fff36b}
+#stats{font-size:13px;line-height:1.7;text-align:right}
+#message{position:absolute;top:24%;left:50%;transform:translateX(-50%);font-size:clamp(20px,5vw,32px);font-weight:bold;text-align:center;width:90%;color:#fff}
+#controls{position:absolute;bottom:15px;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-end;padding:0 18px}
+#stick{width:125px;height:125px;border-radius:50%;background:#2228;border:3px solid #ffffff90;position:relative;pointer-events:auto;touch-action:none}
+#knob{width:49px;height:49px;border-radius:50%;position:absolute;left:35px;top:35px;background:#eee9;border:3px solid white}
+#rightControls{display:flex;flex-direction:column;gap:10px;align-items:center;pointer-events:auto}
+.big{width:76px;height:65px;border-radius:18px;font-size:22px;background:#2486d8}
+#jump{background:#319e4b}
+#start{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:auto;text-align:center;width:88%;max-width:430px;background:#183b27ed;border:4px solid #d7ba70;border-radius:18px;padding:22px}
+#start h1{margin:0 0 12px;font-size:27px}
+#start p{line-height:1.5}
+#start button{background:#e6a72b;color:#222;font-size:19px;padding:13px 24px}
+#hint{font-size:12px;color:#eee}
+#look{position:absolute;right:0;top:35%;width:35%;height:35%;pointer-events:auto;touch-action:none}
+#restart{pointer-events:auto;display:none}
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="top">
+    <div class="panel">
+      <div style="font-weight:bold;margin-bottom:6px">🐾 CHỌN CON VẬT</div>
+      <div id="animals">
+        <button data-animal="goat">🐐 Dê</button>
+        <button data-animal="cow">🐄 Bò</button>
+        <button data-animal="pig">🐷 Heo</button>
+        <button data-animal="chicken">🐔 Gà</button>
+        <button data-animal="sheep">🐑 Cừu</button>
+        <button data-animal="turkey">🦃 Gà tây</button>
+        <button data-animal="duck">🦆 Vịt</button>
+      </div>
+    </div>
+    <div id="stats" class="panel">
+      ⭐ Điểm: <span id="score">0</span><br>
+      🏃 Tốc độ: <span id="speed">0</span><br>
+      <span id="state">Đang chuẩn bị</span>
+    </div>
+  </div>
+
+  <div id="message">Chọn con vật để bắt!</div>
+
+  <div id="controls">
+    <div>
+      <div id="stick"><div id="knob"></div></div>
+      <div style="text-align:center;font-size:12px;margin-top:5px">DI CHUYỂN</div>
+    </div>
+    <div id="rightControls">
+      <button class="big" id="jump">⬆️</button>
+      <div style="font-size:12px">NHẢY</div>
+      <button class="big" id="run">🏃</button>
+      <div style="font-size:12px">CHẠY</div>
+      <button id="restart">🔄 Chơi lại</button>
+    </div>
+  </div>
+
+  <div id="look" aria-label="Vuốt để xoay góc nhìn"></div>
+
+  <div id="start">
+    <h1>🌾 MINECRAFT FARM</h1>
+    <p>Bắt một con vật trong nông trại rồi chạy trốn khỏi ông chủ!</p>
+    <p>🪵 Né hàng rào, rơm và vũng nước.<br>😂 Bị bắt thì ông chủ sẽ lấy lại con vật!</p>
+    <p id="hint">Dùng cần điều khiển để di chuyển. Vuốt bên phải để xoay camera.</p>
+    <button id="play">▶ BẮT ĐẦU CHƠI</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x91d8ff);
+scene.fog = new THREE.Fog(0x91d8ff, 35, 100);
+
+const camera = new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,250);
+const renderer = new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xc9eeff,0x596238,2));
+const sun = new THREE.DirectionalLight(0xfff2cf,2.3);
+sun.position.set(-15,25,10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024,1024);
+scene.add(sun);
+
+const mat = color => new THREE.MeshLambertMaterial({color});
+const materials = {
+ grass:mat(0x68a943), darkGrass:mat(0x538837),
+ dirt:mat(0x9c7041), wood:mat(0x8a592d),
+ white:mat(0xf1eee0), black:mat(0x292929),
+ skin:mat(0xe5b487), green:mat(0x368649),
+ blue:mat(0x397fc2), red:mat(0xc53c32),
+ yellow:mat(0xf2c943), pink:mat(0xe994a1),
+ gray:mat(0x777777), water:mat(0x438ce3),
+ hay:mat(0xd5ae43), eye:mat(0x171717),
+ roof:mat(0x9d3930)
+};
+
+function cube(parent,x,y,z,w,h,d,material){
+ const o = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
+ o.position.set(x,y,z);
+ o.castShadow=true;o.receiveShadow=true;
+ parent.add(o);
+ return o;
+}
+function group(parent,x=0,y=0,z=0){
+ const g=new THREE.Group();g.position.set(x,y,z);parent.add(g);return g;
+}
+
+// Mặt đất
+cube(scene,0,-.45,-30,100,1,120,materials.grass);
+for(let i=0;i<220;i++){
+ const x=Math.random()*90-45,z=Math.random()*100-75;
+ cube(scene,x,.065,z,.15,.06,.15,
+   Math.random()>.5?materials.darkGrass:materials.dirt);
+}
+
+// Hàng rào xung quanh
+function fence(x,z,length,alongX=true){
+ for(let i=0;i<=length;i+=2){
+   cube(scene,x+(alongX?i:0),.65,z+(alongX?0:i),.18,1.3,.18,materials.wood);
+ }
+ for(let y of [.4,1]){
+   cube(scene,x+(alongX?length/2:0),y,z+(alongX?0:length/2),
+     alongX?length: .15,.15,alongX?.15:length,materials.wood);
+ }
+}
+fence(-20,-40,40,true);
+fence(-20,5,40,true);
+fence(-20,-40,45,false);
+fence(20,-40,45,false);
+
+// Chuồng nông trại
+const barn=group(scene,-11,0,-20);
+cube(barn,0,2,0,8,4,6,materials.red);
+cube(barn,0,4.6,0,8.8,1,6.8,materials.roof);
+cube(barn,0,1.1,3.05,2.4,2.2,.15,materials.wood);
+for(let i=-3;i<=3;i+=2)cube(barn,i,2.1,3.12,.12,4,.1,materials.white);
+
+// Cây voxel
+function tree(x,z){
+ const t=group(scene,x,0,z);
+ cube(t,0,1,0,.65,2,.65,materials.wood);
+ cube(t,0,2.5,0,2.6,2.2,2.6,mat(0x398044));
+ cube(t,.3,3.3,.2,1.8,1.1,1.8,mat(0x4b9846));
+}
+for(let i=0;i<13;i++)tree(-18+Math.random()*36,-8-Math.random()*35);
+
+// Đường chạy
+cube(scene,0,.01,-16,9,.05,70,materials.dirt);
+cube(scene,0,.04,-16,7,.05,70,mat(0xb18a56));
+
+// Tạo động vật dạng khối
+const animalNames={
+ goat:"Dê",cow:"Bò",pig:"Heo",chicken:"Gà",
+ sheep:"Cừu",turkey:"Gà tây",duck:"Vịt"
+};
+const animalColors={
+ goat:0xd9d0b9,cow:0xf2eee0,pig:0xee9aaf,
+ chicken:0xf7e6b2,sheep:0xf7f5e9,
+ turkey:0x8a5132,duck:0xf2d64a
+};
+function makeAnimal(type,parent,x=0,y=0,z=0){
+ const g=group(parent,x,y,z);
+ const bodyMat=mat(animalColors[type]||0xffffff);
+ const body=cube(g,0,.65,0,
+   type==="chicken"||type==="duck"?.65:1,
+   type==="cow"?.85:.65,
+   type==="cow"?1.25:.75,bodyMat);
+ const head=group(g,0,1.05,.45);
+ cube(head,0,.18,.05,.48,.48,.48,bodyMat);
+ cube(head,-.12,.24,.3,.09,.09,.06,materials.eye);
+ cube(head,.12,.24,.3,.09,.09,.06,materials.eye);
+ if(type==="pig"){
+   cube(head,0,.07,.32,.3,.18,.1,materials.pink);
+ }
+ if(type==="goat"){
+   cube(head,-.15,.52,0,.1,.4,.1,materials.white);
+   cube(head,.15,.52,0,.1,.4,.1,materials.white);
+ }
+ if(type==="cow"){
+   cube(g,-.27,.85,.02,.25,.35,.8,materials.black);
+   cube(g,.27,.85,-.2,.22,.3,.6,materials.black);
+ }
+ if(type==="chicken"||type==="duck"||type==="turkey"){
+   cube(head,0,.1,.32,.22,.13,.24,materials.yellow);
+   if(type==="turkey")cube(g,0,.8,-.5,.8,.7,.2,materials.red);
+ }
+ if(type==="sheep"){
+   for(let i=0;i<5;i++){
+     cube(g,(i%3-1)*.25,1.0,(Math.floor(i/3)-.5)*.3,
+       .4,.35,.4,materials.white);
+   }
+ }
+ for(let i=-1;i<=1;i+=2){
+   for(let j of [-1,1]){
+     cube(g,i*.27,.25,j*.23,.15,.5,.15,mat(0x574535));
+   }
+ }
+ g.userData.type=type;
+ g.userData.head=head;
+ return g;
+}
+
+// Tạo đàn vật nuôi
+const animals=[];
+const types=Object.keys(animalNames);
+for(let i=0;i<23;i++){
+ const type=types[i%types.length];
+ const x=(Math.random()-.5)*15;
+ const z=-7-Math.random()*28;
+ const a=makeAnimal(type,scene,x,0,z);
+ a.userData.homeX=x;a.userData.homeZ=z;
+ a.userData.phase=Math.random()*6;
+ animals.push(a);
+}
+
+// Vật cản trên đường
+const obstacles=[];
+function addObstacle(type,x,z){
+ const g=group(scene,x,0,z);
+ if(type==="hay"){
+   cube(g,0,.55,0,1.6,1.1,1.3,materials.hay);
+   for(let y of [.3,.7])cube(g,0,y,.67,1.65,.07,.06,materials.wood);
+ }else if(type==="water"){
+   cube(g,0,.035,0,2.3,.07,1.7,materials.water);
+ }else{
+   cube(g,0,.55,0,2,.15,.15,materials.wood);
+   for(let xx of [-.9,0,.9])cube(g,xx,.55,0,.13,1.1,.15,materials.wood);
+   cube(g,0,1,0,2,.15,.15,materials.wood);
+ }
+ obstacles.push({g,type,x,z});
+}
+for(let z=-5;z>-65;z-=5){
+ addObstacle(["hay","water","fence"][Math.floor(Math.random()*3)],
+   (Math.random()-.5)*6,z);
+}
+
+// Nhân vật voxel
+function makePerson(isFarmer=false){
+ const g=group(scene);
+ const shirt=isFarmer?mat(0x347a42):materials.blue;
+ const pants=isFarmer?mat(0x55432e):mat(0x253a91);
+ cube(g,0,1.65,0,.8,.8,.42,shirt);
+ cube(g,0,2.35,0,.72,.7,.7,materials.skin);
+ cube(g,0,2.75,0,.76,.18,.75,
+   isFarmer?materials.yellow:materials.brown||mat(0x513722));
+ if(isFarmer)cube(g,0,2.95,0,.85,.15,.8,materials.wood);
+ cube(g,-.23,.65,0,.27,.75,.32,pants);
+ cube(g,.23,.65,0,.27,.75,.32,pants);
+ cube(g,-.55,1.65,0,.25,.75,.3,shirt);
+ cube(g,.55,1.65,0,.25,.75,.3,shirt);
+ cube(g,-.1,2.4,.37,.08,.09,.05,materials.eye);
+ cube(g,.1,2.4,.37,.08,.09,.05,materials.eye);
+ return g;
+}
+const player=makePerson(false);
+player.position.set(0,0,1);
+const farmer=makePerson(true);
+farmer.position.set(2,0,-2);
+let heldAnimal=null,selected="goat";
+let playing=false,ended=false,chasing=false;
+let score=0,velocity=0,jumpV=0,groundY=0;
+let yaw=0,camYaw=0,camPitch=.18;
+const clock=new THREE.Clock();
+const held=group(scene);
+let laughTime=0;
+
+function message(text){$("message").textContent=text}
+function setState(text){$("state").textContent=text}
+function chooseAnimal(type){
+ if(chasing||ended)return;
+ selected=type;
+ document.querySelectorAll("[data-animal]").forEach(b=>
+   b.classList.toggle("selected",b.dataset.animal===type));
+ message("Đã chọn "+animalNames[type]+"! Đến gần để bắt.");
+}
+document.querySelectorAll("[data-animal]").forEach(b=>
+ b.addEventListener("click",()=>chooseAnimal(b.dataset.animal)));
+
+function begin(){
+ $("start").style.display="none";
+ playing=true;ended=false;chasing=false;
+ player.position.set(0,0,1);
+ farmer.position.set(2,0,-2);
+ yaw=0;camYaw=0;score=0;
+ $("score").textContent=score;
+ setState("Chọn con vật");
+ message("Chọn con vật rồi tiến lại gần!");
+}
+$("play").onclick=begin;
+$("restart").onclick=()=>{
+ held.clear();
+ heldAnimal=null;
+ animals.forEach(a=>a.visible=true);
+ obstacles.forEach(o=>o.g.position.z=o.z);
+ begin();
+ $("restart").style.display="none";
+};
+
+function grabAnimal(){
+ if(chasing||heldAnimal)return;
+ let nearest=null,dist=Infinity;
+ for(const a of animals){
+   if(!a.visible||a.userData.type!==selected)continue;
+   const d=a.position.distanceTo(player.position);
+   if(d<dist){dist=d;nearest=a;}
+ }
+ if(nearest&&dist<3.2){
+   heldAnimal=nearest;
+   nearest.visible=false;
+   const carry=makeAnimal(selected,held,0,0,0);
+   carry.scale.set(.7,.7,.7);
+   carry.position.set(.7,1.5,-.3);
+   chasing=true;
+   farmer.userData.target=player;
+   setState("Ông chủ đang đuổi!");
+   message("BẮT ĐƯỢC RỒI! CHẠY MAU!");
+   score+=10;$("score").textContent=score;
+ }else{
+   message("Đến gần "+animalNames[selected]+" hơn!");
+ }
+}
+function dropHeld(){
+ while(held.children.length)held.remove(held.children[0]);
+ heldAnimal=null;
+}
+
+const input={x:0,y:0,jump:false,run:false};
+const stick=$("stick"),knob=$("knob");
+let stickPointer=null;
+function stickMove(e){
+ const r=stick.getBoundingClientRect();
+ let x=e.clientX-(r.left+r.width/2);
+ let y=e.clientY-(r.top+r.height/2);
+ const max=42,l=Math.hypot(x,y);
+ if(l>max){x=x/l*max;y=y/l*max}
+ input.x=x/max;input.y=y/max;
+ knob.style.left=(35+x)+"px";knob.style.top=(35+y)+"px";
+}
+stick.addEventListener("pointerdown",e=>{
+ stickPointer=e.pointerId;stick.setPointerCapture(e.pointerId);stickMove(e);
+});
+stick.addEventListener("pointermove",e=>{
+ if(e.pointerId===stickPointer)stickMove(e);
+});
+function resetStick(){
+ stickPointer=null;input.x=0;input.y=0;
+ knob.style.left="35px";knob.style.top="35px";
+}
+stick.addEventListener("pointerup",resetStick);
+stick.addEventListener("pointercancel",resetStick);
+
+$("jump").addEventListener("pointerdown",e=>{
+ e.preventDefault();input.jump=true;
+});
+$("jump").addEventListener("pointerup",()=>input.jump=false);
+$("run").addEventListener("pointerdown",e=>{
+ e.preventDefault();input.run=true;
+});
+$("run").addEventListener("pointerup",()=>input.run=false);
+$("run").addEventListener("pointercancel",()=>input.run=false);
+
+let lookPointer=null,lastX=0,lastY=0;
+$("look").addEventListener("pointerdown",e=>{
+ lookPointer=e.pointerId;lastX=e.clientX;lastY=e.clientY;
+ $("look").setPointerCapture(e.pointerId);
+});
+$("look").addEventListener("pointermove",e=>{
+ if(e.pointerId!==lookPointer)return;
+ camYaw-=(e.clientX-lastX)*.008;
+ camPitch=Math.max(-.1,Math.min(.65,camPitch+(e.clientY-lastY)*.004));
+ lastX=e.clientX;lastY=e.clientY;
+});
+$("look").addEventListener("pointerup",()=>lookPointer=null);
+
+// Bàn phím cho máy tính
+const keys={};
+window.addEventListener("keydown",e=>{
+ keys[e.key.toLowerCase()]=true;
+ if(e.code==="Space")input.jump=true;
+ if(e.key==="e"||e.key==="E")grabAnimal();
+});
+window.addEventListener("keyup",e=>{
+ keys[e.key.toLowerCase()]=false;
+ if(e.code==="Space")input.jump=false;
+});
+window.addEventListener("resize",()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+
+function caught(){
+ ended=true;chasing=false;
+ setState("Đã bị bắt!");
+ message("😂 HAHAHA! ÔNG CHỦ BẮT ĐƯỢC BẠN!");
+ $("restart").style.display="block";
+ dropHeld();
+ // Ông chủ giơ con vật lên cao
+ const a=makeAnimal(selected,farmer,0,3,0);
+ a.scale.set(1.25,1.25,1.25);
+ farmer.userData.prize=a;
+ farmer.userData.laugh=0;
+}
+
+function update(dt){
+ if(!playing)return;
+ if(ended){
+   farmer.rotation.y=Math.sin(clock.elapsedTime*2)*.12;
+   const prize=farmer.userData.prize;
+   if(prize){
+     prize.position.y=3+Math.abs(Math.sin(clock.elapsedTime*5))*.4;
+     prize.rotation.z=Math.sin(clock.elapsedTime*4)*.2;
+   }
+   return;
+ }
+
+ // Chọn bắt bằng phím E hoặc nút chạm con vật
+ const forward=new THREE.Vector3(Math.sin(camYaw),0,-Math.cos(camYaw));
+ const right=new THREE.Vector3(forward.z,0,-forward.x);
+ let mx=input.x,my=-input.y;
+ if(keys.a||keys.arrowleft)mx=-1;
+ if(keys.d||keys.arrowright)mx=1;
+ if(keys.w||keys.arrowup)my=-1;
+ if(keys.s||keys.arrowdown)my=1;
+ if(keys.e) {keys.e=false;grabAnimal();}
+
+ const moving=Math.abs(mx)+Math.abs(my)>.08;
+ const fast=input.run||keys.shift;
+ velocity=moving?(fast?9:5):0;
+ $("speed").textContent=Math.round(velocity);
+ const move=new THREE.Vector3();
+ move.addScaledVector(right,mx);
+ move.addScaledVector(forward,-my);
+ if(move.length()>1)move.normalize();
+
+ const old=player.position.clone();
+ player.position.addScaledVector(move,velocity*dt);
+ player.position.x=THREE.MathUtils.clamp(player.position.x,-18,18);
+ player.position.z=THREE.MathUtils.clamp(player.position.z,-68,8);
+
+ if(move.lengthSq()>.01){
+   player.rotation.y=Math.atan2(move.x,move.z);
+ }
+ if(input.jump&&Math.abs(player.position.y)<.02)jumpV=8;
+ jumpV-=20*dt;
+ player.position.y+=jumpV*dt;
+ if(player.position.y<0){player.position.y=0;jumpV=0;}
+
+ // Chướng ngại vật: phải nhảy qua
+ for(const o of obstacles){
+   const d=Math.hypot(player.position.x-o.x,player.position.z-o.z);
+   const width=o.type==="water"?1.6:1.1;
+   if(Math.abs(player.position.z-o.z)<1.1&&
+      Math.abs(player.position.x-o.x)<width&&player.position.y<.8){
+     player.position.copy(old);
+     if(chasing)caught();
+     else message("Hãy nhảy qua chướng ngại vật!");
+   }
+ }
+
+ // Đàn vật di chuyển nhẹ
+ for(const a of animals){
+   if(!a.visible)continue;
+   a.position.x=a.userData.homeX+Math.sin(clock.elapsedTime*.6+a.userData.phase)*.4;
+   a.position.z=a.userData.homeZ+Math.cos(clock.elapsedTime*.5+a.userData.phase)*.3;
+   a.rotation.y=Math.sin(clock.elapsedTime+a.userData.phase)*.15;
+ }
+
+ // Ông chủ rượt theo
+ if(chasing){
+   const dx=player.position.x-farmer.position.x;
+   const dz=player.position.z-farmer.position.z;
+   const d=Math.hypot(dx,dz);
+   if(d>.01){
+     farmer.position.x+=dx/d*4.3*dt;
+     farmer.position.z+=dz/d*4.3*dt;
+     farmer.rotation.y=Math.atan2(dx,dz);
+   }
+   if(d<1.5)caught();
+   setState("Bị rượt đuổi!");
+ }
+
+ // Con vật cầm trên tay
+ if(held.children.length){
+   held.position.copy(player.position);
+   held.rotation.y=player.rotation.y;
+ }
+}
+
+// Bắt vật bằng cách chạm gần nhân vật
+let grabCooldown=0;
+function tryAutoGrab(dt){
+ if(!playing||chasing||heldAnimal)return;
+ grabCooldown-=dt;
+ if(grabCooldown>0)return;
+ for(const a of animals){
+   if(a.visible&&a.userData.type===selected&&
+      a.position.distanceTo(player.position)<1.8){
+     grabAnimal();grabCooldown=1;return;
+   }
+ }
+}
+
+// Camera theo sau nhân vật
+function renderCamera(){
+ const target=player.position.clone();
+ target.y+=1.4;
+ const distance=7.5;
+ const horiz=distance*Math.cos(camPitch);
+ camera.position.set(
+   target.x+Math.sin(camYaw)*horiz,
+   target.y+2+Math.sin(camPitch)*distance,
+   target.z+Math.cos(camYaw)*horiz
+ );
+ camera.lookAt(target);
+}
+
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.04);
+ update(dt);
+ tryAutoGrab(dt);
+ renderCamera();
+ renderer.render(scene,camera);
+}
+chooseAnimal("goat");
+animate();
+})();
+</script>
+</body>
+</html>
